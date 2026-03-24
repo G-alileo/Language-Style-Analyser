@@ -1,7 +1,18 @@
 [project]
 name = "language-style-analyser"
 version = "0.1.0"
-description = "Add your description here"
+description = "A system that applies natural language processing techniques to automatically extract stylistic features from text and generate a measurable linguistic profile."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "en-core-web-sm",
+    "nltk>=3.9.4",
+    "numpy>=2.4.3",
+    "plotly>=6.6.0",
+    "spacy>=3.8.13",
+    "spacy-legacy>=3.0.12",
+    "streamlit>=1.55.0",
+]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
