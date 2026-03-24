@@ -121,7 +121,7 @@ def display_style_interpretation(style):
 def main():
     st.set_page_config(
         page_title="Language Style Fingerprint Analyzer",
-        page_icon="📝",
+        page_icon="🧬",
         layout="wide"
     )
 
@@ -131,7 +131,7 @@ def main():
     text_input = st.text_area(
         "Enter your text:",
         height=200,
-        placeholder="Paste your text here..."
+        placeholder="Paste/write your text here..."
     )
 
     if st.button("Analyze", type="primary"):

@@ -2,9 +2,9 @@ class StyleInterpretor:
 
     MINIMUM_WORDS = 10
     LOW_CONFIDENCE_THRESHOLD = 30
-    INDETERMINATE_THRESHOLD = 30
-    MIXED_STYLE_MARGIN = 10
-    VARIED_STYLE_MARGIN = 15
+    INDETERMINATE_THRESHOLD = 25
+    MIXED_STYLE_MARGIN = 8
+    VARIED_STYLE_MARGIN = 12
 
     def interpret(self, features):
         word_count = features.get("word_count", 0)
@@ -60,6 +60,30 @@ class StyleInterpretor:
 
         return {"status": "ok"}
 
+    def _gradient_score(self, value, low, high, max_points):
+        if value <= low:
+            return 0
+        if value >= high:
+            return max_points
+        return int(((value - low) / (high - low)) * max_points)
+
+    def _inverse_gradient(self, value, low, high, max_points):
+        if value >= high:
+            return 0
+        if value <= low:
+            return max_points
+        return int(((high - value) / (high - low)) * max_points)
+
+    def _range_score(self, value, ideal_low, ideal_high, tolerance, max_points):
+        if ideal_low <= value <= ideal_high:
+            return max_points
+        if value < ideal_low:
+            diff = ideal_low - value
+            return max(0, max_points - int((diff / tolerance) * max_points))
+        else:
+            diff = value - ideal_high
+            return max(0, max_points - int((diff / tolerance) * max_points))
+
     def calculate_style_scores(self, features):
         avg_length = features.get("avg_sentence_length", 0)
         lexical_diversity = features.get("lexical_diversity", 0)
@@ -72,95 +96,176 @@ class StyleInterpretor:
         adj_ratio = pos_percentages.get("ADJ", 0)
         adv_ratio = pos_percentages.get("ADV", 0)
         pron_ratio = pos_percentages.get("PRON", 0)
+        aux_ratio = pos_percentages.get("AUX", 0)
 
-        academic = 0
-        if avg_length > 18:
-            academic += 25
-        if noun_ratio > 30:
-            academic += 25
-        if lexical_diversity > 0.6:
-            academic += 25
-        if stopword_ratio < 0.4:
-            academic += 25
-
-        conversational = 0
-        if avg_length < 12:
-            conversational += 25
-        if verb_ratio > noun_ratio:
-            conversational += 25
-        if stopword_ratio > 0.5:
-            conversational += 25
-        if lexical_diversity < 0.5:
-            conversational += 25
-
-        descriptive = 0
-        if adj_ratio > 15:
-            descriptive += 35
-        if adv_ratio > 10:
-            descriptive += 35
-        if lexical_diversity > 0.5:
-            descriptive += 30
-
-        narrative = 0
-        if verb_ratio > 25:
-            narrative += 30
-        if 12 <= avg_length <= 18:
-            narrative += 25
-        if pron_ratio > 8:
-            narrative += 25
-        if verb_ratio > 20:
-            narrative += 20
-
-        technical = 0
-        if noun_ratio > 35:
-            technical += 30
-        if stopword_ratio < 0.35:
-            technical += 30
-        if lexical_diversity > 0.65:
-            technical += 20
-        if avg_length > 15:
-            technical += 20
-
-        persuasive = 0
-        if verb_ratio > 20:
-            persuasive += 35
-        if avg_length < 15:
-            persuasive += 25
-        if pron_ratio > 5:
-            persuasive += 20
-        if stopword_ratio > 0.4:
-            persuasive += 20
-
-        journalistic = 0
-        if 12 <= avg_length <= 18:
-            journalistic += 30
-        if 25 <= noun_ratio <= 35:
-            journalistic += 25
-        if 15 <= verb_ratio <= 25:
-            journalistic += 25
-        if 0.5 <= lexical_diversity <= 0.7:
-            journalistic += 20
-
-        creative = 0
-        if lexical_diversity > 0.7:
-            creative += 35
-        if sentence_length_variance > 5:
-            creative += 25
-        if adj_ratio > 10:
-            creative += 20
-        if adv_ratio > 5:
-            creative += 20
+        academic = self._score_academic(
+            avg_length, noun_ratio, verb_ratio, lexical_diversity, stopword_ratio, adj_ratio
+        )
+        conversational = self._score_conversational(
+            avg_length, stopword_ratio, lexical_diversity, pron_ratio, aux_ratio, verb_ratio, noun_ratio
+        )
+        descriptive = self._score_descriptive(
+            adj_ratio, adv_ratio, lexical_diversity, noun_ratio, verb_ratio, avg_length
+        )
+        narrative = self._score_narrative(
+            verb_ratio, pron_ratio, avg_length, noun_ratio, aux_ratio, sentence_length_variance
+        )
+        technical = self._score_technical(
+            noun_ratio, stopword_ratio, lexical_diversity, avg_length, verb_ratio, adj_ratio
+        )
+        persuasive = self._score_persuasive(
+            verb_ratio, pron_ratio, avg_length, stopword_ratio, aux_ratio, noun_ratio
+        )
+        journalistic = self._score_journalistic(
+            avg_length, noun_ratio, verb_ratio, lexical_diversity, stopword_ratio
+        )
+        creative = self._score_creative(
+            lexical_diversity, sentence_length_variance, adj_ratio, adv_ratio, avg_length
+        )
 
         return {
-            "academic": min(academic, 100),
-            "conversational": min(conversational, 100),
-            "descriptive": min(descriptive, 100),
-            "narrative": min(narrative, 100),
-            "technical": min(technical, 100),
-            "persuasive": min(persuasive, 100),
-            "journalistic": min(journalistic, 100),
-            "creative": min(creative, 100)
+            "academic": max(0, min(100, academic)),
+            "conversational": max(0, min(100, conversational)),
+            "descriptive": max(0, min(100, descriptive)),
+            "narrative": max(0, min(100, narrative)),
+            "technical": max(0, min(100, technical)),
+            "persuasive": max(0, min(100, persuasive)),
+            "journalistic": max(0, min(100, journalistic)),
+            "creative": max(0, min(100, creative))
         }
+
+    def _score_academic(self, avg_length, noun_ratio, verb_ratio, lexical_diversity, stopword_ratio, adj_ratio):
+        score = 0
+        score += self._gradient_score(avg_length, 15, 28, 30)
+        score += self._gradient_score(noun_ratio, 20, 40, 25)
+        score += self._gradient_score(lexical_diversity, 0.55, 0.8, 20)
+        score += self._inverse_gradient(stopword_ratio, 0.25, 0.45, 15)
+        if verb_ratio < noun_ratio:
+            score += 10
+        if avg_length > 20:
+            score += 15
+        if avg_length < 12:
+            score -= 25
+        if stopword_ratio > 0.5:
+            score -= 15
+        if noun_ratio < 18:
+            score -= 15
+        return score
+
+    def _score_conversational(self, avg_length, stopword_ratio, lexical_diversity, pron_ratio, aux_ratio, verb_ratio, noun_ratio):
+        score = 0
+        score += self._inverse_gradient(avg_length, 5, 12, 30)
+        score += self._gradient_score(stopword_ratio, 0.45, 0.6, 25)
+        score += self._gradient_score(pron_ratio, 10, 25, 20)
+        score += self._gradient_score(aux_ratio, 6, 15, 15)
+        if verb_ratio >= noun_ratio:
+            score += 10
+        if lexical_diversity > 0.75:
+            score += 5
+        if avg_length > 14:
+            score -= 30
+        if stopword_ratio < 0.4:
+            score -= 25
+        if pron_ratio < 8:
+            score -= 15
+        if aux_ratio < 4:
+            score -= 10
+        return score
+
+    def _score_descriptive(self, adj_ratio, adv_ratio, lexical_diversity, noun_ratio, verb_ratio, avg_length):
+        score = 0
+        score += self._gradient_score(adj_ratio, 12, 22, 35)
+        score += self._gradient_score(adv_ratio, 6, 15, 25)
+        score += self._gradient_score(lexical_diversity, 0.5, 0.7, 15)
+        if noun_ratio > verb_ratio:
+            score += 10
+        if 12 < avg_length < 20:
+            score += 10
+        if adj_ratio < 10:
+            score -= 25
+        if adv_ratio < 4:
+            score -= 15
+        if avg_length > 22:
+            score -= 20
+        return score
+
+    def _score_narrative(self, verb_ratio, pron_ratio, avg_length, noun_ratio, aux_ratio, variance):
+        score = 0
+        score += self._gradient_score(verb_ratio, 18, 28, 25)
+        score += self._gradient_score(pron_ratio, 8, 20, 20)
+        score += self._range_score(avg_length, 10, 16, 4, 20)
+        if noun_ratio > 12 and noun_ratio < 25:
+            score += 15
+        if aux_ratio > 5 and aux_ratio < 12:
+            score += 10
+        if pron_ratio < 6:
+            score -= 30
+        if verb_ratio < 15:
+            score -= 20
+        if avg_length < 8:
+            score -= 20
+        if avg_length > 20:
+            score -= 10
+        return score
+
+    def _score_technical(self, noun_ratio, stopword_ratio, lexical_diversity, avg_length, verb_ratio, adj_ratio):
+        score = 0
+        score += self._gradient_score(noun_ratio, 30, 50, 30)
+        score += self._inverse_gradient(stopword_ratio, 0.2, 0.4, 25)
+        score += self._gradient_score(lexical_diversity, 0.6, 0.8, 20)
+        score += self._gradient_score(avg_length, 12, 20, 15)
+        if verb_ratio < 20:
+            score += 10
+        if adj_ratio < 10:
+            score += 5
+        if noun_ratio < 25:
+            score -= 25
+        if stopword_ratio > 0.5:
+            score -= 20
+        return score
+
+    def _score_persuasive(self, verb_ratio, pron_ratio, avg_length, stopword_ratio, aux_ratio, noun_ratio):
+        score = 0
+        score += self._gradient_score(verb_ratio, 18, 28, 30)
+        score += self._inverse_gradient(avg_length, 6, 12, 25)
+        score += self._gradient_score(pron_ratio, 8, 18, 20)
+        score += self._gradient_score(aux_ratio, 6, 14, 15)
+        if verb_ratio > noun_ratio:
+            score += 15
+        if stopword_ratio > 0.38:
+            score += 5
+        if avg_length > 14:
+            score -= 25
+        if verb_ratio < 18:
+            score -= 15
+        if pron_ratio < 8:
+            score -= 15
+        return score
+
+    def _score_journalistic(self, avg_length, noun_ratio, verb_ratio, lexical_diversity, stopword_ratio):
+        score = 0
+        score += self._range_score(avg_length, 12, 18, 4, 25)
+        score += self._range_score(noun_ratio, 25, 38, 8, 25)
+        score += self._range_score(verb_ratio, 15, 25, 5, 20)
+        score += self._range_score(lexical_diversity, 0.5, 0.68, 0.1, 15)
+        score += self._range_score(stopword_ratio, 0.35, 0.5, 0.1, 10)
+        if avg_length < 8 or avg_length > 25:
+            score -= 20
+        return score
+
+    def _score_creative(self, lexical_diversity, variance, adj_ratio, adv_ratio, avg_length):
+        score = 0
+        score += self._gradient_score(lexical_diversity, 0.65, 0.85, 30)
+        score += self._gradient_score(variance, 8, 20, 25)
+        score += self._gradient_score(adj_ratio, 8, 18, 15)
+        score += self._gradient_score(adv_ratio, 4, 12, 10)
+        if variance > 10:
+            score += 10
+        if lexical_diversity < 0.55:
+            score -= 25
+        if variance < 4:
+            score -= 20
+        return score
 
     def classify_complexity(self, avg_sentence_length):
         if avg_sentence_length < 10:
@@ -200,7 +305,7 @@ class StyleInterpretor:
 
         styles_within_varied_margin = [
             s for s, score in sorted_scores
-            if top_score - score <= self.VARIED_STYLE_MARGIN
+            if top_score - score <= self.VARIED_STYLE_MARGIN and score >= self.INDETERMINATE_THRESHOLD
         ]
 
         if len(styles_within_varied_margin) >= 3:
@@ -210,7 +315,7 @@ class StyleInterpretor:
         if len(sorted_scores) >= 2:
             second_score = sorted_scores[1][1]
             second_style = sorted_scores[1][0]
-            if top_score - second_score <= self.MIXED_STYLE_MARGIN:
+            if top_score - second_score <= self.MIXED_STYLE_MARGIN and second_score >= self.INDETERMINATE_THRESHOLD:
                 return f"Mixed ({top_style.capitalize()}/{second_style.capitalize()})"
 
         return top_style.capitalize()
