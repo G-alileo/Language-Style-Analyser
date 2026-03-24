@@ -47,14 +47,22 @@ class Tokeniser:
         avg_length = sum(lengths) / len(lengths) if lengths else 0.0
         min_length = min(lengths) if lengths else 0
         max_length = max(lengths) if lengths else 0
+        variance = self._calculate_variance(lengths, avg_length)
 
         return {
             "sentence_count": sentence_count,
             "word_count": word_count,
             "avg_sentence_length": round(avg_length, 2),
             "min_sentence_length": min_length,
-            "max_sentence_length": max_length
+            "max_sentence_length": max_length,
+            "sentence_length_variance": round(variance, 2)
         }
+
+    def _calculate_variance(self, lengths, avg):
+        if len(lengths) < 2:
+            return 0.0
+        squared_diffs = [(l - avg) ** 2 for l in lengths]
+        return sum(squared_diffs) / len(lengths)
 
     def reset(self):
         self._text = None

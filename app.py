@@ -29,9 +29,10 @@ def display_basic_statistics(stats):
     col2.metric("Words", stats["word_count"])
     col3.metric("Avg Length", stats["avg_sentence_length"])
 
-    col4, col5 = st.columns(2)
+    col4, col5, col6 = st.columns(3)
     col4.metric("Min Sentence", stats["min_sentence_length"])
     col5.metric("Max Sentence", stats["max_sentence_length"])
+    col6.metric("Length Variance", stats["sentence_length_variance"])
 
 
 def display_vocabulary(vocab):
@@ -57,7 +58,7 @@ def display_pos_distribution(pos):
             values=list(percentages.values()),
             title="POS Distribution"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 
 def display_ngrams(ngrams):
@@ -80,6 +81,13 @@ def display_ngrams(ngrams):
 def display_style_interpretation(style):
     st.subheader("Style Interpretation")
 
+    if style.get("status") == "insufficient_text":
+        st.error(style.get("message", "Insufficient text for analysis."))
+        return
+
+    if style.get("confidence") == "low":
+        st.warning(style.get("confidence_warning", "Low confidence results."))
+
     complexity = style.get("complexity", {})
     vocabulary = style.get("vocabulary_assessment", {})
 
@@ -87,17 +95,25 @@ def display_style_interpretation(style):
     col1.metric("Complexity", complexity.get("label", "N/A"), f"Score: {complexity.get('score', 0)}")
     col2.metric("Vocabulary", vocabulary.get("label", "N/A"), f"Score: {vocabulary.get('score', 0)}")
 
-    st.write(f"**Dominant Style:** {style.get('dominant_style', 'N/A')}")
+    dominant = style.get("dominant_style", "N/A")
+    if "Mixed" in dominant or "Varied" in dominant:
+        st.info(f"**Detected Style:** {dominant}")
+    else:
+        st.write(f"**Dominant Style:** {dominant}")
 
     scores = style.get("style_scores", {})
     if scores:
+        sorted_scores = dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
         fig = px.bar(
-            x=list(scores.keys()),
-            y=list(scores.values()),
+            x=list(sorted_scores.keys()),
+            y=list(sorted_scores.values()),
             labels={"x": "Style", "y": "Score"},
-            title="Style Scores"
+            title="Style Scores (8 Categories)",
+            color=list(sorted_scores.values()),
+            color_continuous_scale="Blues"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, width='stretch')
 
     st.info(style.get("summary", ""))
 
@@ -144,7 +160,10 @@ def main():
             trigrams = ngram_analyser.get_trigrams(words, top_k=5)
 
             style_features = {
+                "word_count": stats["word_count"],
+                "sentence_count": stats["sentence_count"],
                 "avg_sentence_length": stats["avg_sentence_length"],
+                "sentence_length_variance": stats["sentence_length_variance"],
                 "lexical_diversity": vocab["lexical_diversity"],
                 "stopword_ratio": vocab["stopword_ratio"],
                 "pos_percentages": pos.get("pos_percentages", {})
