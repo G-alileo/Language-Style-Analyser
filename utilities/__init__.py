@@ -1,1 +1,3 @@
 from utilities.text_cleaner import TextCleaner
+from utilities.export_formatter import ExportFormatter
+from utilities.comparison_generator import ComparisonGenerator
